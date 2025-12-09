@@ -75,6 +75,11 @@ Use this exact installation command:
 pip install fastapi "uvicorn[standard]" websockets requests pandas xgboost scikit-learn==1.6.1 joblib httpx openai
 ```
 
+```bash
+pip install opendatasets pandas xgboost joblib scikit-learn==1.6.1 matplotlib seaborn
+
+```
+
 ---
 
 # 🔑 ** Add OpenAI API Key**
