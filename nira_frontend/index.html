@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NIRA v2 - SOC Dashboard</title>
+    
+    <!-- 1. Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- 2. Leaflet (Map Library) CSS & JS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+     
+    <!-- 3. Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+
+    <!-- 4. Tailwind Config (White Theme) -->
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'nira-bg': '#f8fafc', // Light gray background
+                        'nira-bg-alt': '#ffffff', // Pure white for cards
+                        'nira-border': '#e2e8f0', // Light gray borders
+                        'nira-text': '#1e293b',   // Dark text
+                        'nira-text-light': '#64748b', // Lighter text
+                        'nira-accent': '#e11d48',   // Keep the "alert" rose
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    },
+                    animation: {
+                        'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                        'slide-in': 'slide-in 0.5s ease-out forwards',
+                        'marker-pulse': 'marker-pulse 2s infinite',
+                    },
+                    keyframes: {
+                        'slide-in': {
+                            '0%': { transform: 'translateY(-20px)', opacity: '0' },
+                            '100%': { transform: 'translateY(0)', opacity: '1' },
+                        },
+                        'marker-pulse': {
+                            '0%': { transform: 'scale(0.9)', opacity: '1' },
+                            '70%': { transform: 'scale(2.5)', opacity: '0' },
+                            '100%': { transform: 'scale(0.9)', opacity: '0' },
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <!-- 5. Custom CSS Styles -->
+    <style>
+        html, body, #root {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            background-color: #f8fafc; /* nira-bg */
+            color: #1e293b; /* nira-text */
+            font-family: 'Inter', 'sans-serif';
+            overflow: hidden;
+        }
+        /* Leaflet map styles */
+        #map {
+            height: 100%;
+            width: 100%;
+            border-radius: 0.5rem;
+            border: 1px solid #e2e8f0; /* nira-border */
+        }
+        /* We remove the dark filter for the map */
+        
+        /* Scrollbar for ticker */
+        #ticker-list::-webkit-scrollbar {
+            width: 6px;
+        }
+        #ticker-list::-webkit-scrollbar-track {
+            background: #f8fafc; /* nira-bg */
+        }
+        #ticker-list::-webkit-scrollbar-thumb {
+            background-color: #cbd5e1; /* Lighter scrollbar */
+            border-radius: 20px;
+        }
+        /* Custom pulsing marker (still red for alerts) */
+        .pulsing-marker {
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background-color: #e11d48;
+            border: 2px solid #fecdd3;
+            box-shadow: 0 0 10px #e11d48;
+        }
+        .pulsing-marker::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            background-color: #e11d48;
+            animation: marker-pulse 2s infinite;
+        }
+        /* Lucide icon styling */
+        .icon {
+            width: 28px;
+            height: 28px;
+            stroke-width: 2;
+        }
+        .icon-sm {
+            width: 20px;
+            height: 20px;
+        }
+        .icon-xs {
+            width: 14px;
+            height: 14px;
+        }
+        /* Style for the AI report text */
+        .ai-report {
+            white-space: pre-wrap; /* This preserves formatting! */
+            font-family: monospace;
+            font-size: 0.875rem;
+            line-height: 1.6;
+            background-color: #f8fafc; /* nira-bg */
+            border: 1px solid #e2e8f0; /* nira-border */
+            border-radius: 0.375rem;
+            padding: 0.75rem;
+            color: #334155;
+        }
+    </style>
+</head>
+<body class="flex flex-col h-screen w-screen bg-nira-bg">
+
+    <!-- Header -->
+    <div class="flex justify-between items-center bg-nira-bg-alt p-4 border-b border-nira-border">
+        <div class="flex items-center gap-3">
+            <i data-lucide="activity" class="icon text-nira-accent"></i>
+            <h1 class="text-xl md:text-2xl font-bold text-nira-text">
+                NIRA v2 <span class="font-light text-nira-text-light hidden md:inline">| SOC Dashboard</span>
+            </h1>
+        </div>
+        <div class="text-xs text-nira-text-light pr-2">
+            WHITE THEME / LIVE VIEW
+        </div>
+    </div>
+
+    <!-- Stats Bar -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-px bg-nira-border border-y border-nira-border">
+        <!-- Status -->
+        <div class="bg-nira-bg-alt p-4 flex items-center gap-4">
+            <i id="status-icon" data-lucide="alert-triangle" class="icon text-yellow-500"></i>
+            <div>
+                <div class="text-sm font-semibold text-nira-text-light">CONNECTION STATUS</div>
+                <div id="status-text" class="text-xl font-bold text-yellow-500">Connecting...</div>
+            </div>
+        </div>
+        <!-- NEW: Total Samples (Changed Label) -->
+        <div class="bg-nira-bg-alt p-4 flex items-center gap-4">
+            <i data-lucide="database" class="icon text-blue-600"></i>
+            <div>
+                <div class="text-sm font-semibold text-nira-text-light">SAMPLES PROCESSED</div>
+                <div id="total-packets-text" class="text-xl font-bold text-nira-text">0</div>
+            </div>
+        </div>
+        <!-- Alerts Detected -->
+        <div class="bg-nira-bg-alt p-4 flex items-center gap-4">
+            <i data-lucide="shield-alert" class="icon text-nira-accent"></i>
+            <div>
+                <div class="text-sm font-semibold text-nira-text-light">ALERTS DETECTED</div>
+                <div id="total-alerts-text" class="text-xl font-bold text-nira-accent">0</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="flex-1 flex flex-col md:flex-row gap-4 min-h-0 p-4">
+        <!-- Left Column: Map -->
+        <div class="flex-1 lg:flex-2 xl:flex-3 h-full min-h-[300px]">
+            <div id="map"></div>
+        </div>
+        
+        <!-- Right Column: Ticker -->
+        <div class="flex-1 h-full flex flex-col min-h-[400px] bg-nira-bg-alt rounded-lg border border-nira-border shadow-lg">
+            <div class="p-4 border-b border-nira-border">
+                <h2 class="flex items-center gap-2 text-xl font-semibold text-nira-text">
+                    <i data-lucide="list" class="icon-sm text-nira-accent"></i>
+                    Live Incident Log
+                </h2>
+            </div>
+            <div id="ticker-list" class="flex-1 p-4 overflow-y-auto space-y-4">
+                <!-- Placeholder -->
+                <div id="ticker-placeholder" class="text-center text-nira-text-light pt-10">
+                    Waiting for simulation data...
+                </div>
+                <!-- Alert Cards will be inserted here by JavaScript -->
+            </div>
+        </div>
+    </div>
+
+    <!-- MAIN JAVASCRIPT LOGIC (v2) -->
+    <script>
+        document.addEventListener("DOMContentLoaded", () => {
+            
+            // --- 1. Get Element References ---
+            const statusText = document.getElementById("status-text");
+            const statusIcon = document.getElementById("status-icon");
+            const totalPacketsText = document.getElementById("total-packets-text");
+            const totalAlertsText = document.getElementById("total-alerts-text");
+            const tickerList = document.getElementById("ticker-list");
+            const tickerPlaceholder = document.getElementById("ticker-placeholder");
+
+            const BACKEND_URL = "ws://127.0.0.1:8000/ws/v2"; // <-- Note the /v2 path!
+            let totalPackets = 0;
+            let totalAlerts = 0;
+            let map;
+
+            // --- 2. Initialize Lucide Icons ---
+            lucide.createIcons();
+
+            // --- 3. Initialize Leaflet Map ---
+            map = L.map('map').setView([20, 0], 2.5);
+            // Use the "light" Carto tile
+            L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+                attribution: '&copy; <a href="https://carto.com/attributions">CARTO</a>',
+                subdomains: 'abcd',
+                maxZoom: 20
+            }).addTo(map);
+
+            // --- 4. Connect to WebSocket ---
+            function connectWebSocket() {
+                console.log("Connecting to WebSocket at " + BACKEND_URL);
+                
+                const socket = new WebSocket(BACKEND_URL);
+
+                socket.onopen = () => {
+                    console.log("WebSocket Connected!");
+                    statusText.textContent = "Connected";
+                    statusText.classList.remove("text-yellow-500");
+                    statusText.classList.add("text-green-500");
+                    statusIcon.setAttribute("data-lucide", "check-circle");
+                    statusIcon.classList.remove("text-yellow-500");
+                    statusIcon.classList.add("text-green-500");
+                    lucide.createIcons({ nodes: [statusIcon] });
+                };
+
+                socket.onclose = () => {
+                    console.log("WebSocket Disconnected. Reconnecting in 3s...");
+                    statusText.textContent = "Disconnected";
+                    statusText.classList.remove("text-green-500");
+                    statusText.classList.add("text-red-500");
+                    statusIcon.setAttribute("data-lucide", "alert-triangle");
+                    statusIcon.classList.remove("text-green-500");
+                    statusIcon.classList.add("text-red-500");
+                    lucide.createIcons({ nodes: [statusIcon] });
+                    setTimeout(connectWebSocket, 3000);
+                };
+
+                socket.onerror = (err) => {
+                    console.error("WebSocket Error:", err);
+                    statusText.textContent = "Error";
+                    statusText.classList.remove("text-yellow-500", "text-green-500");
+                    statusText.classList.add("text-red-500");
+                    socket.close();
+                };
+
+                // --- WebSocket Event: On Message (THE CORE) ---
+                socket.onmessage = (event) => {
+                    const data = JSON.parse(event.data);
+                    
+                    // Handle *both* message types from the backend
+                    if (data.type === 'TRAFFIC_PACKET') {
+                        // 1. A packet (normal or attack) was received
+                        totalPackets++;
+                        totalPacketsText.textContent = totalPackets;
+                        
+                    } else if (data.type === 'NEW_ALERT') {
+                        // 2. An attack was detected and processed
+                        console.log("New Alert Received:", data);
+                        
+                        // Hide the "Waiting" placeholder
+                        if (tickerPlaceholder) {
+                            tickerPlaceholder.style.display = 'none';
+                        }
+                        
+                        // --- Update Stats Bar ---
+                        totalAlerts++;
+                        totalAlertsText.textContent = totalAlerts;
+                        
+                        // --- Add Alert to Ticker ---
+                        createAlertCard(data);
+                        
+                        // --- Add Marker to Map ---
+                        addMapMarker(data);
+                    }
+                };
+            }
+
+            // --- 5. New Function: Create Alert Card (v2) ---
+            function createAlertCard(alertData) {
+                const timestamp = new Date(alertData.timestamp).toLocaleString();
+
+                const card = document.createElement('div');
+                card.className = 'bg-nira-bg-alt p-4 rounded-lg border border-nira-border animate-slide-in shadow-md';
+                
+                // This 'report' text will be formatted by the 'ai-report' class
+                // We use <pre> to preserve all whitespace from the LLM's response
+                card.innerHTML = `
+                    <!-- Card Header: Type and Time -->
+                    <div class="flex justify-between items-center gap-3 mb-3 pb-3 border-b border-nira-border">
+                        <div class="flex items-center gap-2">
+                            <i data-lucide="shield-alert" class="icon-sm text-nira-accent flex-shrink-0"></i>
+                            <span class="text-lg font-semibold text-nira-text truncate">${alertData.attackType}</span>
+                        </div>
+                        <span class="text-xs text-nira-text-light flex-shrink-0">${timestamp}</span>
+                    </div>
+                    
+                    <!-- Card Footer: Detailed Info (Grid) -->
+                    <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs text-nira-text-light mb-3">
+                        <div class="flex items-center gap-1.5 truncate" title="Source IP">
+                            <i data-lucide="network" class="icon-xs flex-shrink-0"></i>
+                            <strong class="mr-1">IP:</strong>
+                            <span class="truncate">${alertData.ip}</span>
+                        </div>
+                        <div class="flex items-center gap-1.5 truncate" title="Destination Port">
+                            <i data-lucide="server" class="icon-xs flex-shrink-0"></i>
+                            <strong class="mr-1">Port:</strong>
+                            <span class="truncate">${alertData.port}</span>
+                        </div>
+                        <div class="flex items-center gap-1.5 truncate" title="Location">
+                            <i data-lucide="map-pin" class="icon-xs flex-shrink-0"></i>
+                            <strong class="mr-1">Location:</strong>
+                            <span class="truncate">${alertData.geo.city || 'N/A'}, ${alertData.geo.country}</span>
+                        </div>
+                        <div classs="flex items-center gap-1.5 truncate" title="Packet Count">
+                            <i data-lucide="package" class="icon-xs flex-shrink-0"></i>
+                            <strong class="mr-1">Packets:</strong>
+                            <span class="truncate">${alertData.packets}</span>
+                        </div>
+                    </div>
+
+                    <!-- Card Body: AI Report (Full, Un-trimmed) -->
+                    <div class="mt-4">
+                        <h4 class="text-sm font-semibold text-nira-text mb-2">AI Generated Report</h4>
+                        <pre class="ai-report">${alertData.report}</pre>
+                    </div>
+                `;
+                
+                tickerList.prepend(card);
+                lucide.createIcons({ nodes: [card] });
+            }
+
+            // --- 6. New Function: Add Map Marker ---
+            function addMapMarker(alertData) {
+                if (!map || alertData.geo.lat === 0) return;
+
+                const pulsingIcon = L.divIcon({
+                    className: 'pulsing-marker',
+                    iconSize: [16, 16],
+                });
+
+                const popupContent = `
+                    <div class="text-gray-900">
+                        <div class="font-bold text-lg">${alertData.attackType}</div>
+                        <div><strong>IP:</strong> ${alertData.ip}</div>
+                        <div><strong>Location:</strong> ${alertData.geo.city}, ${alertData.geo.country}</div>
+                        <div><strong>ISP:</strong> ${alertData.geo.isp}</div>
+                    </div>
+                `;
+
+                L.marker([alertData.geo.lat, alertData.geo.lon], { icon: pulsingIcon })
+                    .addTo(map)
+                    .bindPopup(popupContent);
+
+                map.flyTo([alertData.geo.lat, alertData.geo.lon], 6, {
+                    animate: true,
+                    duration: 1.5
+                });
+            }
+
+            // --- 7. Start the Application ---
+            connectWebSocket();
+        });
+    </script>
+</body>
+</html>
